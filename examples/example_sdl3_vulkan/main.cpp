@@ -344,6 +344,7 @@ static void FramePresent(ImGui_ImplVulkanH_Window* wd)
 // Main code
 int main(int, char**)
 {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
     // Setup SDL
     // [If using SDL_MAIN_USE_CALLBACKS: all code below until the main loop starts would likely be your SDL_AppInit() function]
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))

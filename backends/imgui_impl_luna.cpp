@@ -61,9 +61,7 @@ namespace typedefs
     class ImGui_ImplLuna_Data
     {
         public:
-            explicit ImGui_ImplLuna_Data(const ImGui_ImplLuna_InitInfo &lunaInitInfo):
-                lunaInitInfo(lunaInitInfo)
-            {}
+            explicit ImGui_ImplLuna_Data(const ImGui_ImplLuna_InitInfo &lunaInitInfo): lunaInitInfo(lunaInitInfo) {}
 
             ImGui_ImplLuna_InitInfo lunaInitInfo{};
             VkDeviceSize bufferMemoryAlignment = 256; // NOLINT(*-avoid-magic-numbers)
@@ -550,6 +548,7 @@ bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *info)
     io.BackendRendererName = "imgui_impl_luna";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
     io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports;
 
     const VkPhysicalDeviceProperties properties = lunaGetPhysicalDeviceProperties();
     bd->nonCoherentAtomSize = properties.limits.nonCoherentAtomSize;
@@ -569,7 +568,9 @@ void ImGui_ImplLuna_Shutdown()
 
     io.BackendRendererName = nullptr;
     io.BackendRendererUserData = nullptr;
-    io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures);
+    io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset |
+                         ImGuiBackendFlags_RendererHasTextures |
+                         ImGuiBackendFlags_RendererHasViewports);
     IM_DELETE(bd);
 }
 

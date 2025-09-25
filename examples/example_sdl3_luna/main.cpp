@@ -30,22 +30,36 @@ static void CleanupVulkan()
     // CheckVkResult(lunaDestroyInstance());
 }
 
-static void FrameRender(const uint32_t width,
+static bool FrameRender(const uint32_t width,
                         const uint32_t height,
                         const VkClearValue *clearValue,
                         const LunaRenderPass renderPass,
                         ImDrawData *drawData)
 {
+    if (g_SwapChainRebuild)
+    {
+        return false;
+    }
     const LunaRenderPassBeginInfo renderPassBeginInfo = {
         .renderArea = {.extent = {width, height}},
         .colorAttachmentClearValue = *clearValue,
         .allowSuboptimalSwapchain = true,
     };
-    CheckVkResult(lunaBeginRenderPass(renderPass, &renderPassBeginInfo));
+    const VkResult result = lunaBeginRenderPass(renderPass, &renderPassBeginInfo);
+    switch (result)
+    {
+        case VK_SUBOPTIMAL_KHR:
+            break;
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return false;
+        default:
+            CheckVkResult(result);
+    }
 
     ImGui_ImplLuna_RenderDrawData(drawData);
-
     lunaEndRenderPass();
+
+    return true;
 }
 
 static void FramePresent()
@@ -72,14 +86,7 @@ static void FramePresent()
 // Main code
 int main(const int argc, const char *argv[])
 {
-    for (int i = 0; i < argc; i++)
-    {
-        if (strncmp(argv[i], "-x11", 4) == 0)
-        {
-            SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
-            break;
-        }
-    }
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
     // Setup SDL
     // [If using SDL_MAIN_USE_CALLBACKS: all code below until the main loop starts would likely be your SDL_AppInit() function]
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
@@ -203,6 +210,8 @@ int main(const int argc, const char *argv[])
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // Enable Multi-Viewport / Platform Windows
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -285,6 +294,7 @@ int main(const int argc, const char *argv[])
                 .height = static_cast<uint32_t>(height),
             };
             CheckVkResult(lunaResizeSwapchain(1, &renderPassResizeInfo, nullptr, nullptr));
+            g_SwapChainRebuild = false;
         }
 
         // Start the Dear ImGui frame
@@ -348,8 +358,17 @@ int main(const int argc, const char *argv[])
             clearValue.color.float32[1] = clearColor.y * clearColor.w;
             clearValue.color.float32[2] = clearColor.z * clearColor.w;
             clearValue.color.float32[3] = clearColor.w;
-            FrameRender(width, height, &clearValue, renderPass, drawData);
-            FramePresent();
+            if (FrameRender(width, height, &clearValue, renderPass, drawData))
+            {
+                FramePresent();
+            }
+        }
+
+        // Update and Render additional Platform Windows
+        if ((io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) == ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
         }
     }
 
