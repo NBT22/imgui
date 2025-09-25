@@ -5,11 +5,14 @@ set(CMAKE_CXX_STANDARD 11)
 
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
-set(LUNA_DEFINE_VK_NO_PROTOTYPES OFF)
 include(FetchContent)
+set(LUNA_DEFINE_VK_NO_PROTOTYPES OFF)
 FetchContent_Declare(
         Luna
-        SOURCE_DIR ../../Luna
+        GIT_REPOSITORY https://github.com/NBT22/Luna
+        GIT_TAG main
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE
         EXCLUDE_FROM_ALL
         SYSTEM
 )
