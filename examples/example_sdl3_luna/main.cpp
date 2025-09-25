@@ -136,7 +136,7 @@ int main(const int argc, const char *argv[])
 
     constexpr const char *extensionName = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     constexpr LunaPhysicalDevicePreferenceDefinition physicalDevicePreferenceDefinition = {
-        .preferredDeviceType = VK_PHYSICAL_DEVICE_TYPE_CPU,
+        .preferredDeviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
     };
     const LunaDeviceCreationInfo deviceCreationInfo = {
         .extensionCount = 1,
