@@ -26,8 +26,13 @@
 // Read comments in imgui_impl_vulkan.h.
 
 #include <imgui.h>
+#include <luna/lunaBuffer.h>
+#include <luna/lunaDevice.h>
+#include <luna/lunaDrawing.h>
+#include <luna/lunaImage.h>
 #ifndef IMGUI_DISABLE
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -37,9 +42,6 @@
 #include <luna/lunaTypes.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
-#ifndef IM_MAX
-#define IM_MAX(A, B) (((A) >= (B)) ? (A) : (B))
-#endif
 #undef Status // X11 headers are leaking this.
 
 // Visual Studio warnings
@@ -181,45 +183,40 @@ namespace constants
     };
 } // namespace constants
 
-namespace variables
-{
-    struct PushConstants
-    {
-            float scaleX;
-            float scaleY;
-
-            float translateX;
-            float translateY;
-    } pushConstants{};
-} // namespace variables
-
 namespace functions
 {
-    using namespace typedefs;
-    using namespace constants;
-    using namespace variables;
+    namespace variables
+    {
+        struct PushConstants
+        {
+                float scaleX;
+                float scaleY;
+
+                float translateX;
+                float translateY;
+        } pushConstants{};
+    } // namespace variables
 
     // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
     // It is STRONGLY preferred that you use docking branch with multi-viewports (== single Dear ImGui context + multiple windows) instead of multiple Dear ImGui contexts.
     // FIXME: multi-context support is not tested and probably dysfunctional in this backend.
-    inline ImGui_ImplLuna_Data *ImGui_ImplLuna_GetBackendData()
+    inline typedefs::ImGui_ImplLuna_Data *ImGui_ImplLuna_GetBackendData()
     {
         return ImGui::GetCurrentContext() != nullptr
-                       ? static_cast<ImGui_ImplLuna_Data *>(ImGui::GetIO().BackendRendererUserData)
+                       ? static_cast<typedefs::ImGui_ImplLuna_Data *>(ImGui::GetIO().BackendRendererUserData)
                        : nullptr;
     }
 
-    inline void CheckVkResult(const VkResult err)
+    inline void CheckVkResult(const VkResult result)
     {
-        const ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
+        const typedefs::ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
         if (backendData == nullptr)
         {
             return;
         }
-        const ImGui_ImplLuna_InitInfo *initInfo = &backendData->lunaInitInfo;
-        if (initInfo->CheckVkResultFn != nullptr)
+        if (backendData->lunaInitInfo.CheckVkResultFn != nullptr)
         {
-            initInfo->CheckVkResultFn(err);
+            backendData->lunaInitInfo.CheckVkResultFn(result);
         }
     }
 
@@ -233,14 +230,16 @@ namespace functions
     {
         if (buffer != LUNA_NULL_HANDLE)
         {
-            lunaDestroyBuffer(buffer);
+            IM_ASSERT((lunaBufferGetCreationInfo(buffer).usage & usage) == usage);
+            CheckVkResult(lunaResizeBuffer(&buffer, newSize));
+        } else
+        {
+            const LunaBufferCreationInfo bufferInfo = {
+                .size = newSize,
+                .usage = usage,
+            };
+            CheckVkResult(lunaCreateBuffer(&bufferInfo, &buffer));
         }
-
-        const LunaBufferCreationInfo bufferInfo = {
-            .size = newSize,
-            .usage = usage,
-        };
-        CheckVkResult(lunaCreateBuffer(&bufferInfo, &buffer));
     }
 
     void ImGui_ImplLuna_SetupRenderState(const LunaGraphicsPipeline pipeline, const ImDrawData *drawData)
@@ -271,47 +270,48 @@ namespace functions
 
         // Setup scale and translation:
         // Our visible imgui space lies from draw_data->DisplayPps (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
-        pushConstants.scaleX = 2.0f / drawData->DisplaySize.x;
-        pushConstants.scaleY = 2.0f / drawData->DisplaySize.y;
-        pushConstants.translateX = -1.0f - drawData->DisplayPos.x * pushConstants.scaleX;
-        pushConstants.translateY = -1.0f - drawData->DisplayPos.y * pushConstants.scaleY;
+        variables::pushConstants.scaleX = 2 * 1.0f / drawData->DisplaySize.x;
+        variables::pushConstants.scaleY = 2 * 1.0f / drawData->DisplaySize.y;
+        variables::pushConstants.translateX = -1.0f - drawData->DisplayPos.x * variables::pushConstants.scaleX;
+        variables::pushConstants.translateY = -1.0f - drawData->DisplayPos.y * variables::pushConstants.scaleY;
         CheckVkResult(lunaPushConstants(pipeline));
     }
 
-    void ImGui_ImplLuna_DestroyTexture(ImTextureData *tex)
+    void ImGui_ImplLuna_DestroyTexture(ImTextureData *texture)
     {
-        ImGui_ImplLuna_Texture *backendTexture = static_cast<ImGui_ImplLuna_Texture *>(tex->BackendUserData);
+        using ImGui_ImplLuna_Texture = typedefs::ImGui_ImplLuna_Texture;
+        ImGui_ImplLuna_Texture *backendTexture = static_cast<ImGui_ImplLuna_Texture *>(texture->BackendUserData);
         if (backendTexture == nullptr)
         {
             return;
         }
-        IM_ASSERT(reinterpret_cast<ImTextureID>(backendTexture->descriptorSet) == tex->TexID);
+        IM_ASSERT(reinterpret_cast<ImTextureID>(backendTexture->descriptorSet) == texture->TexID);
         ImGui_ImplLuna_RemoveTexture(backendTexture->descriptorSet);
         lunaDestroyImage(backendTexture->image);
         IM_DELETE(backendTexture);
 
         // Clear identifiers and mark as destroyed (in order to allow e.g. calling InvalidateDeviceObjects while running)
-        tex->SetTexID(ImTextureID_Invalid);
-        tex->SetStatus(ImTextureStatus_Destroyed);
-        tex->BackendUserData = nullptr;
+        texture->SetTexID(ImTextureID_Invalid);
+        texture->SetStatus(ImTextureStatus_Destroyed);
+        texture->BackendUserData = nullptr;
     }
 
     void ImGui_ImplLuna_CreatePipeline(VkSampleCountFlagBits msaaSamples, LunaRenderPassSubpass subpass)
     {
-        ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
+        typedefs::ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
         if (backendData->vertexShaderModule == LUNA_NULL_HANDLE)
         {
             const LunaShaderModuleCreationInfo creationInfo = {
-                .size = VERTEX_SHADER_SPIRV.size() * sizeof(VERTEX_SHADER_SPIRV.at(0)),
-                .spirv = VERTEX_SHADER_SPIRV.data(),
+                .size = constants::VERTEX_SHADER_SPIRV.size() * sizeof(constants::VERTEX_SHADER_SPIRV.at(0)),
+                .spirv = constants::VERTEX_SHADER_SPIRV.data(),
             };
             CheckVkResult(lunaCreateShaderModule(&creationInfo, &backendData->vertexShaderModule));
         }
         if (backendData->fragmentShaderModule == LUNA_NULL_HANDLE)
         {
             const LunaShaderModuleCreationInfo creationInfo = {
-                .size = FRAGMENT_SHADER_SPIRV.size() * sizeof(FRAGMENT_SHADER_SPIRV.at(0)),
-                .spirv = FRAGMENT_SHADER_SPIRV.data(),
+                .size = constants::FRAGMENT_SHADER_SPIRV.size() * sizeof(constants::FRAGMENT_SHADER_SPIRV.at(0)),
+                .spirv = constants::FRAGMENT_SHADER_SPIRV.data(),
             };
             CheckVkResult(lunaCreateShaderModule(&creationInfo, &backendData->fragmentShaderModule));
         }
@@ -415,8 +415,8 @@ namespace functions
 
         constexpr LunaPushConstantsRange pushConstantsRange = {
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-            .size = sizeof(pushConstants),
-            .dataPointer = &pushConstants,
+            .size = sizeof(variables::pushConstants),
+            .dataPointer = &variables::pushConstants,
         };
         const LunaPipelineLayoutCreationInfo layoutCreationInfo = {
             .descriptorSetLayoutCount = 1,
@@ -445,7 +445,7 @@ namespace functions
 
     void ImGui_ImplLuna_CreateDeviceObjects()
     {
-        ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
+        typedefs::ImGui_ImplLuna_Data *backendData = ImGui_ImplLuna_GetBackendData();
         const ImGui_ImplLuna_InitInfo *initInfo = &backendData->lunaInitInfo;
 
         if (backendData->textureSampler == nullptr)
@@ -522,20 +522,20 @@ namespace functions
 
 using namespace typedefs;
 using namespace constants;
-using namespace variables;
 using namespace functions;
 } // namespace
 
-bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *info)
+bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *initInfo)
 {
-    IM_ASSERT(info->renderPassSubpass != LUNA_NULL_HANDLE);
-    IM_ASSERT(info->useDescriptorPoolSize ? info->descriptorPoolSize > 0 : info->descriptorPool != LUNA_NULL_HANDLE);
-    if (info->minImageCount == -1)
+    IM_ASSERT(initInfo->renderPassSubpass != LUNA_NULL_HANDLE);
+    IM_ASSERT(initInfo->useDescriptorPoolSize ? initInfo->descriptorPoolSize > 0
+                                              : initInfo->descriptorPool != LUNA_NULL_HANDLE);
+    if (initInfo->minImageCount == -1)
     {
-        info->minImageCount = 2;
+        initInfo->minImageCount = 2;
     } else
     {
-        IM_ASSERT(info->minImageCount >= 2);
+        IM_ASSERT(initInfo->minImageCount >= 2);
     }
 
     ImGuiIO &io = ImGui::GetIO();
@@ -543,15 +543,15 @@ bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *info)
     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
 
     // Setup backend capabilities flags
-    ImGui_ImplLuna_Data *bd = IM_NEW(ImGui_ImplLuna_Data)(*info);
-    io.BackendRendererUserData = static_cast<void *>(bd);
+    ImGui_ImplLuna_Data *backendData = IM_NEW(ImGui_ImplLuna_Data)(*initInfo);
+    io.BackendRendererUserData = static_cast<void *>(backendData);
     io.BackendRendererName = "imgui_impl_luna";
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;
     io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
     io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports;
 
     const VkPhysicalDeviceProperties properties = lunaGetPhysicalDeviceProperties();
-    bd->nonCoherentAtomSize = properties.limits.nonCoherentAtomSize;
+    backendData->nonCoherentAtomSize = properties.limits.nonCoherentAtomSize;
 
     ImGui_ImplLuna_CreateDeviceObjects();
 
@@ -658,8 +658,10 @@ void ImGui_ImplLuna_RenderDrawData(ImDrawData *drawData, LunaGraphicsPipeline pi
             {
                 // User callback, registered via ImDrawList::AddCallback()
                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
-                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState) // NOLINT
+                // NOLINTNEXTLINE(*-pro-type-cstyle-cast, *-no-int-to-ptr)
+                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
                 {
+                    // TODO: This isn't the same functionality as the Vulkan impl
                     ImGui_ImplLuna_SetupRenderState(pipeline, drawData);
                 } else
                 {
@@ -773,7 +775,7 @@ void ImGui_ImplLuna_UpdateTexture(ImTextureData *textureData)
         //IMGUI_DEBUG_LOG("UpdateTexture #%03d: WantCreate %dx%d\n", tex->UniqueID, tex->Width, tex->Height);
         IM_ASSERT(textureData->TexID == ImTextureID_Invalid && textureData->BackendUserData == nullptr);
         IM_ASSERT(textureData->Format == ImTextureFormat_RGBA32);
-        ImGui_ImplLuna_Texture *backendTexture = IM_NEW(ImGui_ImplLuna_Texture)();
+        ImGui_ImplLuna_Texture *backendTexture = IM_NEW(ImGui_ImplLuna_Texture)(); // TODO: This is leaked
         const LunaSampler textureSampler = ImGui_ImplLuna_GetBackendData()->textureSampler;
 
         // Create the Image:

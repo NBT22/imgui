@@ -54,7 +54,6 @@
 
 // Vulkan includes
 #include <luna/luna.h>
-#include <variant>
 
 // Backend uses a small number of descriptors per font atlas + as many as additional calls done to ImGui_ImplVulkan_AddTexture().
 #define IMGUI_IMPL_LUNA_MINIMUM_IMAGE_SAMPLER_POOL_SIZE (8) // Minimum per atlas
@@ -84,7 +83,7 @@ struct ImGui_ImplLuna_InitInfo
 };
 
 // Follow "Getting Started" link and check examples/ folder to learn about using backends!
-IMGUI_IMPL_API bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *info);
+IMGUI_IMPL_API bool ImGui_ImplLuna_Init(ImGui_ImplLuna_InitInfo *initInfo);
 IMGUI_IMPL_API void ImGui_ImplLuna_Shutdown();
 IMGUI_IMPL_API void ImGui_ImplLuna_RenderDrawData(ImDrawData *drawData,
                                                   LunaGraphicsPipeline pipeline = LUNA_NULL_HANDLE);

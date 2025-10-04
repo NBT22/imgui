@@ -109,6 +109,8 @@ int main(const int argc, const char *argv[])
         std::cout << "Error: SDL_CreateWindow(): " << SDL_GetError() << '\n';
         return -1;
     }
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(window);
 
     CheckVkResult(lunaInitializeVolk());
 
@@ -178,8 +180,6 @@ int main(const int argc, const char *argv[])
         .presentModePriorityList = presentModePriorityList.data(),
     };
     CheckVkResult(lunaCreateSwapchain(&swapchainCreationInfo));
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    SDL_ShowWindow(window);
 
     constexpr VkSubpassDependency dependency = {
         .srcSubpass = VK_SUBPASS_EXTERNAL,
